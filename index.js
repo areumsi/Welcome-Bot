@@ -1,180 +1,240 @@
-const { prefix, developerID } = require("./config.json")
-const { config } = require("dotenv");
-const db =require("quick.db");
-const welc = require("image-cord")
+require("dotenv").config();
+
+const { prefix } = require("./config.json");
+const { Client, GatewayIntentBits, Collection, Events, AttachmentBuilder } = require("discord.js");
+const { QuickDB } = require("quick.db");
+const { Canvas, loadImage, loadFont: registerFont } = require("canvas-constructor/napi-rs");
 const moment = require("moment");
-const Discord = require('discord.js')
-const fetch = require("node-fetch");
-const express = require('express')
-const app = express()
-const { Canvas, resolveImage } = require('canvas-constructor');
-const canvas = require('canvas')
-const { Client, MessageEmbed }  = require('discord.js');
-const client = new Discord.Client({
-  disableEveryone: false
+const http = require("http");
+
+const db = new QuickDB();
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers,
+  ],
 });
-const cooldown = new Set();
-const cdseconds = 1; 
 
-// This code is made by Atreya#2401
+// Register custom fonts
+registerFont("./fonts/Vampire Wars.ttf", "Vampire Wars");
+registerFont("./fonts/Quicksand-SemiBold.ttf", "Quicksand-SemiBold");
 
+function drawAccentSymbol(card, x, y, size) {
+  const half = size / 2;
+  return card
+    .save()
+    .beginPath()
+    .moveTo(x, y - half)
+    .lineTo(x + half, y)
+    .lineTo(x, y + half)
+    .lineTo(x - half, y)
+    .closePath()
+    .fill()
+    .restore();
+}
 
-client.commands = new Discord.Collection();
-client.aliases = new Discord.Collection();
+async function loadUserAvatar(user) {
+  const avatarUrl = user.displayAvatarURL({ extension: "png", size: 512, forceStatic: true });
+  const response = await fetch(avatarUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to load avatar: ${response.status} ${response.statusText}`);
+  }
 
-["command"].forEach(handler => {
+  const avatarBuffer = Buffer.from(await response.arrayBuffer());
+  return loadImage(avatarBuffer);
+}
+
+// Command and alias collections
+client.commands = new Collection();
+client.aliases = new Collection();
+
+// Per-user command cooldown (in seconds)
+const COOLDOWN_SECONDS = 1;
+const cooldowns = new Map();
+
+// Load all command handlers
+["command"].forEach((handler) => {
   require(`./handlers/${handler}`)(client);
 });
-process.on('UnhandledRejection', console.error);
- 
 
-client.on("message", async message => {
-    
+// Global unhandled rejection logger
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled Promise Rejection:", error);
+});
+
+// ─── Message command handler ───────────────────────────────────────────────
+client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
   if (!message.guild) return;
   if (!message.content.startsWith(prefix)) return;
 
-  if(cooldown.has(message.author.id)){
-
-    return message.channel.send(`**${message.author.username}** wait \`10\` seconds to use this command!`)
+  // Cooldown check
+  const now = Date.now();
+  const cooldownExpiry = cooldowns.get(message.author.id);
+  if (cooldownExpiry && now < cooldownExpiry) {
+    const remaining = Math.ceil((cooldownExpiry - now) / 1000);
+    return message.channel.send(
+      `**${message.author.username}**, please wait \`${remaining}\` second(s) before using another command.`
+    );
   }
-  cooldown.add(message.author.id);
-  setTimeout(() => {
-cooldown.delete(message.author.id)}, cdseconds * 1000)
+  cooldowns.set(message.author.id, now + COOLDOWN_SECONDS * 1000);
+  // Clean up after cooldown expires to prevent memory leak
+  setTimeout(() => cooldowns.delete(message.author.id), COOLDOWN_SECONDS * 1000);
 
-  if (!message.member)
-    message.member = message.guild.fetchMember(message);
+  const args = message.content.slice(prefix.length).trim().split(/\s+/);
+  const cmdName = args.shift().toLowerCase();
 
-  const args = message.content
-    .slice(prefix.length)
-    .trim()
-    .split(/ +/g);
-  const cmd = args.shift().toLowerCase();
+  if (!cmdName) return;
 
-  if (cmd.length === 0) return;
+  const command = client.commands.get(cmdName) ?? client.commands.get(client.aliases.get(cmdName));
+  if (!command) return;
 
-  let command = client.commands.get(cmd);
-
-  if (!command) command = client.commands.get(client.aliases.get(cmd));
-
-  if (command) command.run(client, message, args);
-
-  
-  
-
-});
-
-const { registerFont } = require('canvas');
-registerFont('./fonts/Vampire Wars.ttf', { family: 'Vampire Wars' });
-
-client.on("guildMemberAdd", async member => {
-
-  
-
-  
-
-const channel = db.get(`welcome_${member.guild.id}`);
-  const text = db.get(`desc_${member.guild.id}`)
-   const img = db.get(`image_${member.guild.id}`)
-   const nail = db.get(`thumbnail_${member.guild.id}`)
-
-
-if (channel === null) {
-    return;
+  try {
+    await command.run(client, message, args, db);
+  } catch (error) {
+    console.error(`Error executing command "${cmdName}":`, error);
+    message.channel
+      .send("An error occurred while running that command.")
+      .catch(() => {});
   }
-// This code is made by Atreya#2401
-  
-const mes = text.replace(/`?\?user`?/g, member.user.username).replace(/`?\?server`?/g, member.guild.name).replace(/`?\?tag`?/g, member.user.tag).replace(/`?\?mention`?/g, `<@${member.user.id}>`).replace(/`?\?rank`?/g, member.guild.members.cache.size);
-
-const tnail = nail.replace(/`?\?useravatar`?/g, member.user.displayAvatarURL({ dynamic: true })).replace(/`?\?serveravatar`?/g, member.guild.iconURL({ dynamic: true }))
-
-
-  const embed = new Discord.MessageEmbed()
-.setTitle(`Welcome to ${member.guild.name}`)
-.setDescription(`${mes}`)
-.setImage(img)
-.setThumbnail(tnail)
-.setColor("RANDOM")
-
-
-
-client.channels.cache.get(channel).send(embed)
 });
 
-const links = require('./JSON/link.json')
+// ─── Embed welcome on member join ─────────────────────────────────────────
+client.on(Events.GuildMemberAdd, async (member) => {
+  const channelId = await db.get(`welcome_${member.guild.id}`);
+  if (!channelId) return;
 
-client.on("guildMemberAdd", async member => {
-  const chx = db.get(`welcomeimg_${member.guild.id}`);
-  if (chx === null) {
-    return;
+  const [text, img, nail] = await Promise.all([
+    db.get(`desc_${member.guild.id}`),
+    db.get(`image_${member.guild.id}`),
+    db.get(`thumbnail_${member.guild.id}`),
+  ]);
+
+  // Guard: all required fields must be set before sending
+  if (!text || !nail) return;
+
+  const memberCount = member.guild.memberCount;
+
+  const description = text
+    .replace(/`?\?user`?/g, member.user.username)
+    .replace(/`?\?server`?/g, member.guild.name)
+    .replace(/`?\?tag`?/g, member.user.tag)
+    .replace(/`?\?mention`?/g, `<@${member.user.id}>`)
+    .replace(/`?\?rank`?/g, memberCount);
+
+  const thumbnail = nail
+    .replace(/`?\?useravatar`?/g, member.user.displayAvatarURL({ forceStatic: false }))
+    .replace(/`?\?serveravatar`?/g, member.guild.iconURL({ forceStatic: false }));
+
+  const { EmbedBuilder } = require("discord.js");
+  const embed = new EmbedBuilder()
+    .setTitle(`Welcome to ${member.guild.name}`)
+    .setDescription(description)
+    .setThumbnail(thumbnail)
+    .setColor("Random");
+
+  if (img) embed.setImage(img);
+
+  const welcomeChannel = client.channels.cache.get(channelId);
+  if (welcomeChannel) {
+    welcomeChannel.send({ embeds: [embed] }).catch(console.error);
   }
-
-
- const link = links.link[Math.floor((Math.random() * links.link.length))];
-
-    const img = await canvas.loadImage(`${link}`);
-
- 
-const userPfp = await resolveImage(member.user.displayAvatarURL({
-            format: "jpg",
-            size: 1024
-        }))
-
-    const image = new Canvas(6912, 3456)
-      .printImage(img, 0, 0, 6912, 3456)
-      .setColor(`#FFFFFF`)
-      .setTextFont('215px Quicksand-SemiBold')
-      .setTextAlign("center")
-      .printWrappedText(moment(member.user.createdAt).format("MMMM d, YYYY"), 2655, 1980)
-      .setTextAlign("center")
-      .setTextFont('215px Quicksand-SemiBold')
-      .printWrappedText(member.user.tag, 1920, 1355)
-      .printWrappedText(`${member.guild.members.cache.size}th member`, 2180, 2600)
-      .setColor(`#FFFFFF`)
-      .setTextAlign("center")
-      .setTextFont('250px Quicksand-SemiBold')
-      .setTextAlign("center")
-      .printWrappedText(member.guild.name, 1900, 3100)
-      .printCircularImage(userPfp, 5260, 1714, 1210, 1120)
-      .toBuffer();
-      
-    
-
-
-  client.channels.cache.get(chx).send(new Discord.MessageAttachment((await image), "image.png"));
-
 });
 
+// ─── Image welcome on member join ─────────────────────────────────────────
+const backgroundLinks = require("./JSON/link.json");
 
+client.on(Events.GuildMemberAdd, async (member) => {
+  const channelId = await db.get(`welcomeimg_${member.guild.id}`);
+  if (!channelId) return;
 
+  try {
+    const link = backgroundLinks.link[Math.floor(Math.random() * backgroundLinks.link.length)];
+    const bg = await loadImage(link);
+    const userPfp = await loadUserAvatar(member.user);
 
+    const memberCount = member.guild.memberCount;
 
-// Do not change anything here
-require('http').createServer((req, res) => res.end(`
- |-----------------------------------------|
- |              Information               |
- |-----------------------------------------|
- |• Alive: 24/7                            |
- |-----------------------------------------|
- |• Author: Atreya#2401                   |
- |-----------------------------------------|
- |• Server: https://discord.gg/gU7XAxTpX5  |
- |-----------------------------------------|
- |• Github: https://github.com/diwasatreya |
- |-----------------------------------------|
- |• License: Apache License 2.0            |
- |-----------------------------------------|
-`)).listen(3000) //Don't remove this 
+    // ── Welcome card: 900×300 ───────────────────────────────────────────────
+    // Layout: circular avatar on the left (center 150,150 r=110),
+    //         text block on the right (x from ~280).
+    const W = 900, H = 300;
+    const AVATAR_CX = 150, AVATAR_CY = 150, AVATAR_R = 110;
+    const TEXT_X = 295; // left edge of text column
+    const HEADER_Y = 68;
+    const HEADER_TEXT = "WELCOME";
+    const HEADER_FONT = "22px Quicksand-SemiBold";
+    const HEADER_TEXT_X = TEXT_X + 22;
+    const HEADER_LEFT_X = TEXT_X + 4;
+    const HEADER_RIGHT_PADDING = 18;
+    const headerMeasure = new Canvas(1, 1).setTextFont(HEADER_FONT).measureText(HEADER_TEXT);
+    const HEADER_RIGHT_X = HEADER_TEXT_X + headerMeasure.width + HEADER_RIGHT_PADDING;
 
-client.on("ready", () => {
-   client.user.setStatus("dnd"); // You can change it to online, dnd, idle
+    const imageBuffer = new Canvas(W, H)
+      // Background stretched to fill the whole card
+      .printImage(bg, 0, 0, W, H)
+      // Semi-transparent dark overlay for legibility
+      .setColor("rgba(0, 0, 0, 0.35)")
+      .printRectangle(0, 0, W, H)
+      // "WELCOME" header
+      .setColor("rgba(255,255,255,0.75)")
+      .setTextAlign("left")
+      .setTextFont(HEADER_FONT)
+      .process((card) => drawAccentSymbol(card, HEADER_LEFT_X, HEADER_Y - 8, 10))
+      .printText(HEADER_TEXT, HEADER_TEXT_X, HEADER_Y)
+      .process((card) => drawAccentSymbol(card, HEADER_RIGHT_X, HEADER_Y - 8, 10))
+      // Username (large)
+      .setColor("#FFFFFF")
+      .setTextFont("44px Quicksand-SemiBold")
+      .printText(member.user.username, TEXT_X, 128)
+      // Divider line
+      .setColor("rgba(255,255,255,0.25)")
+      .printRectangle(TEXT_X, 138, W - TEXT_X - 30, 2)
+      // Member rank
+      .setColor("rgba(255,255,255,0.80)")
+      .setTextFont("22px Quicksand-SemiBold")
+      .printText(`Member #${memberCount}`, TEXT_X, 175)
+      // Account created date
+      .setColor("rgba(255,255,255,0.60)")
+      .setTextFont("20px Quicksand-SemiBold")
+      .printText(`Account created: ${moment(member.user.createdAt).format("MMM D, YYYY")}`, TEXT_X, 210)
+      // Server name (bottom)
+      .setColor("rgba(255,255,255,0.50)")
+      .setTextFont("18px Quicksand-SemiBold")
+      .printText(member.guild.name, TEXT_X, 245)
+      // Thin white circle border around avatar
+      .setColor("#FFFFFF")
+      .printCircle(AVATAR_CX, AVATAR_CY, AVATAR_R + 4)
+      .setColor("rgba(0, 0, 0, 0.25)")
+      .printCircle(AVATAR_CX, AVATAR_CY, AVATAR_R)
+      // Circular avatar
+      .printCircularImage(userPfp, AVATAR_CX, AVATAR_CY, AVATAR_R, { fit: "cover" })
+      .png();
 
- console.log(`Successfully logined as ${client.user.tag} `)
+    const attachment = new AttachmentBuilder(imageBuffer, { name: "welcome.png" });
+    const imageChannel = client.channels.cache.get(channelId);
+    if (imageChannel) {
+      imageChannel.send({ files: [attachment] }).catch(console.error);
+    }
+  } catch (error) {
+    console.error("Error generating image welcome:", error);
+  }
 });
 
-//  For Watching Status
-// client.on("ready", () => {
-// client.user.setActivity(`Chilling with owner`, { type:         "STREAMING",
-// url: "https://www.twitch.tv/nocopyrightsounds"})});
+// ─── Keep-alive HTTP server (for Replit / hosting) ────────────────────────
+http
+  .createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Welcome Bot is online.");
+  })
+  .listen(3000);
+
+// ─── Ready event ──────────────────────────────────────────────────────────
+client.once(Events.ClientReady, (readyClient) => {
+  readyClient.user.setStatus("dnd");
+  console.log(`Logged in as ${readyClient.user.tag}`);
+});
 
 client.login(process.env.TOKEN);

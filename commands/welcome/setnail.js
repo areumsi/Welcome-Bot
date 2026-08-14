@@ -1,24 +1,27 @@
-const Discord = require("discord.js")
-const db = require("quick.db")
+const { PermissionFlagsBits } = require("discord.js");
 
 module.exports = {
   name: "setthumbnail",
   aliases: ["setnail", "st"],
   category: ":frame_photo: WELCOME",
-  usage: "st <link>",
-  description: "Set the img for welcome channel",
-  run: (client, message, args) => {
-   if (!message.member.hasPermission("ADMINISTRATION")) {
-      return message.channel.send("You do not enough permission to use this command.");
+  usage: "setthumbnail <url|tag>",
+  description:
+    "Set the thumbnail for the welcome embed. Use `?useravatar` for the member's avatar or `?serveravatar` for the server icon.",
+  run: async (client, message, args, db) => {
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return message.channel.send("You do not have permission to use this command.");
     }
-  const text = args.join(" ");
 
-  if (!text || text.length > 1000) return message.channel.send(`**${message.author.username}** give me link or do \`?useravatar\ to discplay user avatar or \`?serveravatar\` to display server avatar in thumbnail`); 
-  
-  // This code is made by Atreya#2401
-   
-    db.set(`thumbnail_${message.guild.id}`, text)
-    
-    message.channel.send(`Now welcome thumbnail will be \n \`${text}\` `)
-  }
-}
+    const value = args.join(" ");
+
+    if (!value) {
+      return message.channel.send(
+        `**${message.author.username}**, please provide a URL or a tag.\n` +
+          `Tags: \`?useravatar\` (member avatar), \`?serveravatar\` (server icon)`
+      );
+    }
+
+    await db.set(`thumbnail_${message.guild.id}`, value);
+    return message.channel.send(`Welcome thumbnail updated to:\n\`${value}\``);
+  },
+};

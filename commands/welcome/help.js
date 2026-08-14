@@ -1,89 +1,86 @@
-const { MessageEmbed } = require("discord.js");
-const { prefix, developerID } = require("../../config.json")
+const { EmbedBuilder } = require("discord.js");
+const { prefix } = require("../../config.json");
+
 module.exports = {
   name: "help",
-  description:
-    "Get list of all command and even get to know every command details",
-  usage: "help <cmd>",
+  description: "Get a list of all commands, or details about a specific command.",
+  usage: "help [command]",
   category: ":frame_photo: WELCOME",
   run: async (client, message, args) => {
-  
+    // Show info for a specific command
     if (args[0]) {
-      const command = await client.commands.get(args[0]);
+      const command =
+        client.commands.get(args[0]) ??
+        client.commands.get(client.aliases.get(args[0]));
 
       if (!command) {
-        return message.channel.send(`Unknown Command: ${args[0]}`);
+        return message.channel.send(`Unknown command: \`${args[0]}\``);
       }
 
-      const embed = new MessageEmbed()
-        .setAuthor(command.name, client.user.displayAvatarURL())
-        .addField("Description", command.description || "Description is not provided join support server for help")
-        .addField("Usage", `\`${command.usage}\`` || "Not Provided Join Support server for help")
-        .addField("Aliases", `\`\`\`${command.aliases}\`\`\``|| "There is no aliases")
+      const embed = new EmbedBuilder()
+        .setAuthor({ name: command.name, iconURL: client.user.displayAvatarURL() })
+        .addFields(
+          {
+            name: "Description",
+            value: command.description ?? "No description provided.",
+          },
+          {
+            name: "Usage",
+            value: command.usage ? `\`${command.usage}\`` : "Not provided.",
+          },
+          {
+            name: "Aliases",
+            value:
+              command.aliases?.length
+                ? command.aliases.map((a) => `\`${a}\``).join(", ")
+                : "None",
+          }
+        )
         .setThumbnail(client.user.displayAvatarURL())
         .setColor("#000000")
-        .setFooter(`Join our support server `);
+        .setFooter({ text: "Join our support server for more help." });
 
-      return message.channel.send(embed).then(m => m.delete({ timeout: 8000 }));
+      const sent = await message.channel.send({ embeds: [embed] });
+      setTimeout(() => sent.delete().catch(() => {}), 8000);
+      return;
     }
-    const commands = await client.commands;
 
-    const emx = new MessageEmbed()
-      .setDescription(`**Note:** You must set \`welcomechannel\` \`description\`, \`thumnail\` to start welcome and to use test command. 
-
-      Only for \`${prefix}setwelcomechannel\` [ Compulsory ]
-      setwelcomechannel <#channel>
-
-      Only for \`${prefix}setdescription\` [ Compulsory ]
-      **Tags** : **Info** : **Example**
-      ?user : Display username only : Atreya
-      ?tag : Display username with tag : Atreya#2401
-      ?mention : Mention user in description : <@519666024220721152>
-      ?server : Display server name : Aromax Development
-      ?rank : Position to join server : 69th Member
-
-      Only for \`${prefix}setthumbnail\` [ Compulsory ]
-      **Tags** : **Info**
-      ?serveravatar : Display server avatar in Thumnail
-      ?useravatar : Display new member avatar in Thumnail
-
-      Only for \`${prefix}setimage\` [ Optional ]
-      You have to provide valid link 
-
-      Only for \`${prefix}setimagewelcome\` [ Optional ]
-      setimagewelcome <#channel> : Send message of image only 
-
-      Only for \`${prefix}reset\` 
-      It resets all the things of description, image, thumnail, welcome channel.
-
-      Only for \`${prefix}test\`
-      Use this command by completing all the [ Compulsory ] marked things.
-
-       Do \`${prefix}help <command>\` to see aliases of that command`)
-       
+    // Build main help embed
+    const emx = new EmbedBuilder()
+      .setDescription(
+        `**Note:** You must set \`welcomechannel\`, \`description\`, and \`thumbnail\` before the welcome system works.\n\n` +
+          `**\`${prefix}setwelcomechannel <#channel>\`** — Set the embed welcome channel *(required)*\n` +
+          `**\`${prefix}setdescription <text>\`** — Set the welcome description *(required)*\n` +
+          `**\`${prefix}setthumbnail <link|tag>\`** — Set the thumbnail *(required)*\n` +
+          `**\`${prefix}setimage <link>\`** — Set the embed image *(optional)*\n` +
+          `**\`${prefix}setimagewelcome <#channel>\`** — Set the image welcome channel *(optional)*\n` +
+          `**\`${prefix}test\`** — Preview the welcome embed\n` +
+          `**\`${prefix}testimage\`** — Preview the image welcome\n` +
+          `**\`${prefix}reset\`** — Clear all welcome settings\n\n` +
+          `**Description tags:**\n` +
+          `\`?user\` → username · \`?tag\` → user#0000 · \`?mention\` → @mention · \`?server\` → server name · \`?rank\` → member count\n\n` +
+          `**Thumbnail tags:**\n` +
+          `\`?useravatar\` → member avatar · \`?serveravatar\` → server icon\n\n` +
+          `Run \`${prefix}help <command>\` for details on any command.`
+      )
       .setColor("#FFFFF0")
-      .setFooter(`Code Owner: Atreya#2401`)
-    
+      .setFooter({ text: "Welcome Bot by Atreya" });
 
-    const com = {};
-    for (let comm of commands.array()) {
-      const category = comm.category || "Unknown";
-      const { name } = comm;
-
-      if (!com[category]) {
-        com[category] = [];
-      }
-      com[category].push(name);
+    // Append categorized command list
+    const grouped = {};
+    for (const command of client.commands.values()) {
+      const cat = command.category ?? "Uncategorized";
+      if (!grouped[cat]) grouped[cat] = [];
+      grouped[cat].push(command.name);
     }
 
-    for(const [key, value] of Object.entries(com)) {
-      const category = key;
-
-      const desc = `\`${value.join("` • `")}\``;
-
-      emx.addField(`${category}`, desc);
+    for (const [category, names] of Object.entries(grouped)) {
+      emx.addFields({
+        name: category,
+        value: names.map((n) => `\`${n}\``).join(" · "),
+      });
     }
 
-    const msg = await message.channel.send(emx)
-  }
+    await message.channel.send({ embeds: [emx] });
+  },
 };

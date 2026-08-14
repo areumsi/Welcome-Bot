@@ -1,24 +1,25 @@
-const Discord = require("discord.js")
-const db = require("quick.db")
-// This code is made by Atreya#2401
+const { PermissionFlagsBits } = require("discord.js");
+
 module.exports = {
   name: "setimage",
   aliases: ["setimg", "si"],
   category: ":frame_photo: WELCOME",
-  usage: "si <link>",
-  description: "Set the img for welcome channel",
-  run: (client, message, args) => {
-   if (!message.member.hasPermission("ADMINISTRATION")) {
-      return message.channel.send("You do not enough permission to use this command.");
+  usage: "setimage <url>",
+  description: "Set the image displayed in the welcome embed.",
+  run: async (client, message, args, db) => {
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return message.channel.send("You do not have permission to use this command.");
     }
-  const text = args.join(" ");
 
-  if (!text || text.length > 1000) return message.channel.send(`**${message.author.username}** give me link `); 
-  
-  
-   
-    db.set(`image_${message.guild.id}`, text)
-    
-    message.channel.send(`Now welcome image will be \n \`${text}\` `)
-  }
-}
+    const url = args.join(" ");
+
+    if (!url) {
+      return message.channel.send(
+        `**${message.author.username}**, please provide a valid image URL.`
+      );
+    }
+
+    await db.set(`image_${message.guild.id}`, url);
+    return message.channel.send(`Welcome embed image updated to:\n\`${url}\``);
+  },
+};

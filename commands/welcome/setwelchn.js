@@ -1,27 +1,25 @@
-const Discord = require("discord.js")
-const db = require("quick.db")
+const { PermissionFlagsBits } = require("discord.js");
 
 module.exports = {
   name: "setwelcomechannel",
   aliases: ["setwelcome", "sw"],
-  usage: "sw <#channel>",
+  usage: "setwelcomechannel <#channel>",
   category: ":frame_photo: WELCOME",
-  description: "Set the welcome channel",
-  run: (client, message, args) => {
+  description: "Set the channel where welcome embeds will be sent.",
+  run: async (client, message, args, db) => {
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return message.channel.send("You do not have permission to use this command.");
+    }
 
-  
-     if (!message.member.hasPermission("ADMINISTRATION")) {
-      return message.channel.send("You do not enough permission to use this command.");
+    const channel = message.mentions.channels.first();
+
+    if (!channel) {
+      return message.channel.send(
+        "Please mention a valid channel, e.g. `setwelcomechannel #welcome`."
+      );
     }
-    const channel = message.mentions.channels.first()
-    
-    if(!channel) {
-      return message.channel.send("You have to specify the channel")
-    }
-   // This code is made by Atreya#2401
-    db.set(`welcome_${message.guild.id}`, channel.id)
-    
-    
-    message.channel.send(`Welcome channel updated as ${channel}`)
-  }
-}
+
+    await db.set(`welcome_${message.guild.id}`, channel.id);
+    return message.channel.send(`Welcome channel set to ${channel}.`);
+  },
+};

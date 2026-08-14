@@ -1,33 +1,34 @@
 const { readdirSync } = require("fs");
-const ascii = require("ascii-table");
+const AsciiTable = require("ascii-table");
 
+const table = new AsciiTable("Commands");
+table.setHeading("File", "Status");
 
-const table = new ascii("Infomations");
-table.setHeading("Commands", " Status");
-
+/**
+ * Loads all command files from the ./commands directory into client.commands.
+ * Each subdirectory is treated as a category. Files must export { name, run }.
+ */
 module.exports = (client) => {
-    
-    readdirSync("./commands/").forEach(dir => {
-        
-        const commands = readdirSync(`./commands/${dir}/`).filter(file => file.endsWith(".js"));
-    
-       
-        for (let file of commands) {
-            const pull = require(`../commands/${dir}/${file}`);
-    
-            if (pull.name) {
-                client.commands.set(pull.name, pull);
-                table.addRow(file, '✅');
-            } else {
-                table.addRow(file, `❌ Something is missing in this file!`);
-                continue;
-            }
-    
-       
-            if (pull.aliases && Array.isArray(pull.aliases)) pull.aliases.forEach(alias => client.aliases.set(alias, pull.name));
-        }
-    });
-    
+  const categories = readdirSync("./commands/");
 
-    console.log(table.toString());
-}
+  for (const dir of categories) {
+    const files = readdirSync(`./commands/${dir}/`).filter((f) => f.endsWith(".js"));
+
+    for (const file of files) {
+      const command = require(`../commands/${dir}/${file}`);
+
+      if (command.name) {
+        client.commands.set(command.name, command);
+        table.addRow(file, "✅ Loaded");
+      } else {
+        table.addRow(file, "❌ Missing name export");
+      }
+
+      if (command.aliases && Array.isArray(command.aliases)) {
+        command.aliases.forEach((alias) => client.aliases.set(alias, command.name));
+      }
+    }
+  }
+
+  console.log(table.toString());
+};

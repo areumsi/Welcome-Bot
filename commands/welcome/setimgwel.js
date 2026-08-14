@@ -1,27 +1,23 @@
-const Discord = require("discord.js")
-const db = require("quick.db")
+const { PermissionFlagsBits } = require("discord.js");
 
 module.exports = {
   name: "setimagewelcome",
   aliases: ["setimgwel", "siw"],
-  usage: "siw <#channel>",
+  usage: "setimagewelcome <#channel>",
   category: ":frame_photo: WELCOME",
-  description: "Set the welcome channel",
-  run: (client, message, args) => {
+  description: "Set the channel where image-based welcome cards will be sent.",
+  run: async (client, message, args, db) => {
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return message.channel.send("You do not have permission to use this command.");
+    }
 
-  // This code is made by Atreya#2401
-     if (!message.member.hasPermission("ADMINISTRATION")) {
-      return message.channel.send("You do not enough permission to use this command.");
+    const channel = message.mentions.channels.first();
+
+    if (!channel) {
+      return message.channel.send("Please mention a valid channel, e.g. `setimagewelcome #welcome`.");
     }
-    const channel = message.mentions.channels.first()
-    
-    if(!channel) {
-      return message.channel.send("You have to specify the channel")
-    }
-   
-    db.set(`welcomeimg_${message.guild.id}`, channel.id)
-    
-    
-    message.channel.send(`Welcome Image channel updated as ${channel}`)
-  }
-}
+
+    await db.set(`welcomeimg_${message.guild.id}`, channel.id);
+    return message.channel.send(`Image welcome channel set to ${channel}.`);
+  },
+};
